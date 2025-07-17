@@ -33,14 +33,16 @@ from rich.markdown import Markdown
 @dataclass
 class StoryConfig:
     """Configuration class for story generation parameters"""
-    genre: str = "general"
-    style: str = "narrative"
-    length: str = "medium"
-    tone: str = "neutral"
+    genre: str = ""
+    style: str = ""
+    length: str = ""
+    tone: str = ""
     protagonist: str = ""
     setting: str = ""
     theme: str = ""
     original_prompt: str = ""
+    word_limit: int = 0  # New field for explicit word count
+    custom_requirements: str = ""  # Additional custom requirements from user
 
 
 class PromptAnalyzer:
@@ -94,7 +96,21 @@ class PromptAnalyzer:
         config = StoryConfig()
         config.original_prompt = prompt
         prompt_lower = prompt.lower()
-        
+
+        # Detect explicit word count (e.g., 'not more than 500 words', 'max 500 words', 'under 500 words')
+        word_count_match = re.search(r'(?:not more than|max(?:imum)?|under|less than|no more than|up to)\s*(\d{2,5})\s*words?', prompt_lower)
+        if word_count_match:
+            config.word_limit = int(word_count_match.group(1))
+            # Use 'short' for <= 600, 'medium' for <= 1600, 'long' for <= 3500, else 'epic'
+            if config.word_limit <= 600:
+                config.length = 'short'
+            elif config.word_limit <= 1600:
+                config.length = 'medium'
+            elif config.word_limit <= 3500:
+                config.length = 'long'
+            else:
+                config.length = 'epic'
+
         # Extract genre
         genre_scores = {}
         for genre, keywords in self.genre_keywords.items():
@@ -176,7 +192,7 @@ class StoryCraftGenerator:
         """Make request to OpenRouter API"""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "HTTP-Referer": "https://github.com/your-repo/storycraft",
+            "HTTP-Referer": "https://github.com/UTTAM-VAGHASIA/story-craft",
             "X-Title": "StoryCraft AI Story Generator",
             "Content-Type": "application/json"
         }
@@ -186,7 +202,7 @@ class StoryCraftGenerator:
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a masterful storyteller who creates engaging, well-structured stories. Write complete stories with compelling characters, vivid descriptions, and satisfying plot development."
+                    "content": "You are a masterful storyteller who creates engaging, well-structured stories. Write complete stories with compelling characters, vivid descriptions, and satisfying plot development. IMPORTANT: Respond ONLY with the final story text. Do NOT include any planning, thinking, outlining, or meta-commentary about the story. Just write the story directly. Do not include any outline, thoughts, or planning. Only output the story itself. If you include anything else, it will be discarded."
                 },
                 {
                     "role": "user", 
@@ -237,14 +253,17 @@ class StoryCraftGenerator:
         prompt = f"Write a story based on this request: '{user_prompt}'\n\n"
         
         # Add extracted parameters for guidance
-        if config.genre != "general":
+        if config.genre and config.genre != "general":
             prompt += f"Genre: {config.genre}\n"
         
         if config.length:
             length_info = self.lengths[config.length]
             prompt += f"Length: {length_info['description']}\n"
         
-        if config.tone != "neutral":
+        if config.word_limit:
+            prompt += f"Word limit: {config.word_limit} words\n"
+        
+        if config.tone and config.tone != "neutral":
             prompt += f"Tone: {config.tone}\n"
         
         if config.protagonist:
@@ -253,7 +272,13 @@ class StoryCraftGenerator:
         if config.setting:
             prompt += f"Setting: {config.setting}\n"
         
-        prompt += f"""
+        if config.custom_requirements:
+            prompt += f"Additional requirements: {config.custom_requirements}\n"
+        
+        if config.word_limit:
+            prompt += f"\nPlease create a complete, engaging story that fulfills this request. Make sure to:\n- Create compelling characters with clear motivations\n- Include vivid descriptions and engaging dialogue\n- Ensure the story has a clear beginning, middle, and satisfying end\n- Write NO MORE THAN {config.word_limit} words (hard limit)\n\nWrite the story now:"
+        else:
+            prompt += f"""
 Please create a complete, engaging story that fulfills this request. Make sure to:
 - Create compelling characters with clear motivations
 - Include vivid descriptions and engaging dialogue
@@ -331,13 +356,67 @@ Write the story now:"""
         
         return story
     
+    def extract_story_title(self, story: str) -> str:
+        """Extract the title from the generated story content"""
+        lines = story.split('\n')
+        
+        # Look for common title patterns
+        for line in lines[:10]:  # Check first 10 lines
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Check if line looks like a title (various patterns)
+            if (
+                # Title with # markdown
+                line.startswith('#') or
+                # Title in quotes
+                (line.startswith('"') and line.endswith('"')) or
+                # Title with emphasis
+                (line.startswith('*') and line.endswith('*')) or
+                # All caps short line (likely title)
+                (line.isupper() and len(line) < 50 and len(line) > 3) or
+                # Title-like patterns
+                (len(line) < 60 and len(line) > 5 and 
+                 not line.endswith('.') and 
+                 not line.endswith(',') and
+                 not line.endswith(';') and
+                 not line.lower().startswith(('the ', 'a ', 'an ', 'in ', 'on ', 'at ')) and
+                 any(char.isupper() for char in line) and
+                 not any(word in line.lower() for word in ['said', 'was', 'were', 'had', 'would', 'could', 'should']))
+            ):
+                # Clean the title
+                title = line.strip('# *"')
+                if len(title) > 3 and len(title) < 60:
+                    return title
+        
+        # If no title found, try to extract from first sentence
+        first_sentence = story.split('.')[0].strip()
+        if len(first_sentence) > 10 and len(first_sentence) < 80:
+            return first_sentence
+        
+        # Fallback to first few words
+        words = story.split()[:8]
+        return ' '.join(words) if words else "Untitled Story"
+    
     def save_story(self, story: str, config: StoryConfig) -> Path:
         """Save generated story to file"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # Create a safe filename from the prompt
-        safe_prompt = re.sub(r'[^\w\s-]', '', config.original_prompt[:30]).strip()
-        safe_prompt = re.sub(r'[-\s]+', '_', safe_prompt)
-        filename = f"story_{safe_prompt}_{timestamp}.md"
+        
+        # Extract title from the actual story content
+        story_title = self.extract_story_title(story)
+        
+        # Create a safe filename from the story title
+        safe_title = re.sub(r'[^\w\s-]', '', story_title)[:50]
+        safe_title = re.sub(r'[-\s]+', '_', safe_title).strip('_')
+        
+        # If title is still empty, use fallback
+        if not safe_title:
+            prompt_words = config.original_prompt.split()[:3]
+            safe_title = '_'.join(prompt_words)
+            safe_title = re.sub(r'[^\w\s-]', '', safe_title)
+        
+        filename = f"{safe_title}_{timestamp}.md"
         filepath = self.stories_dir / filename
         
         # Create story metadata
@@ -349,7 +428,8 @@ Write the story now:"""
             "tone": config.tone,
             "protagonist": config.protagonist,
             "setting": config.setting,
-            "model": self.model
+            "model": self.model,
+            "word_limit": config.word_limit,
         }
         
         content = f"""# {config.original_prompt[:50]}{'...' if len(config.original_prompt) > 50 else ''}
@@ -359,14 +439,11 @@ Write the story now:"""
 - **Genre**: {config.genre.title()}
 - **Length**: {self.lengths[config.length]['description']}
 - **Generated**: {datetime.now().strftime('%Y-%m-%d at %H:%M')}
-
----
-
-{story}
-
----
-*Generated by StoryCraft AI Story Generator*
 """
+        if config.word_limit:
+            content += f"- **Word Limit**: {config.word_limit} words\n"
+        content += "\n---\n\n"
+        content += f"{story}\n\n---\n*Generated by StoryCraft AI Story Generator*\n"
         
         filepath.write_text(content, encoding="utf-8")
         self.logger.info(f"Story saved to {filepath}")
@@ -391,7 +468,7 @@ Write the story now:"""
         
         for i, story_path in enumerate(sorted(stories, key=lambda x: x.stat().st_mtime, reverse=True), 1):
             # Extract title from filename
-            title = story_path.stem.replace("story_", "").replace("_", " ")
+            title = story_path.stem.replace("_", " ")  # Replace underscores with spaces
             created = datetime.fromtimestamp(story_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
             size = f"{story_path.stat().st_size // 1024}KB"
             table.add_row(str(i), title[:35] + "..." if len(title) > 35 else title, created, size)

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}StoryCraft - Generate Story{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <div class="card shadow">
+            <div class="card-body">
+                <h1 class="card-title mb-4 text-center">✨ Create Your Story</h1>
+                <p class="text-muted text-center mb-4">Tell me what story you want, and I'll create it for you!</p>
+                
+                <form method="post" action="/generate" id="storyForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="story-file" class="form-label">📄 Upload Story Prompt (.txt)</label>
+                        <input class="form-control" type="file" id="story-file" name="story_file" accept=".txt" onchange="handleFileUpload(this)">
+                        <div class="form-text">Optional: Upload a text file containing your story prompt</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="prompt" class="form-label">💭 Your Story Idea</label>
+                        <textarea class="form-control" id="prompt" name="prompt" rows="6" placeholder="Describe your story in detail... Here are some examples:
+
+• A fantasy adventure about a young wizard discovering their powers
+• Write a short horror story under 500 words set in an abandoned hospital
+• A romantic comedy about two people who meet in a coffee shop during a thunderstorm
+• Create an epic sci-fi saga about humanity's first contact with aliens
+• Tell a mystery story featuring a detective solving a locked-room murder" required></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">📝 Quick Settings (Optional)</label>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <select class="form-select" id="length" name="length">
+                                    <option value="">Auto-detect length</option>
+                                    <option value="short">Short (~500 words)</option>
+                                    <option value="medium">Medium (~1500 words)</option>
+                                    <option value="long">Long (~3000 words)</option>
+                                    <option value="epic">Epic (~5000 words)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <select class="form-select" id="genre" name="genre">
+                                    <option value="">Auto-detect genre</option>
+                                    <option value="fantasy">Fantasy</option>
+                                    <option value="sci-fi">Science Fiction</option>
+                                    <option value="mystery">Mystery</option>
+                                    <option value="horror">Horror</option>
+                                    <option value="romance">Romance</option>
+                                    <option value="adventure">Adventure</option>
+                                    <option value="thriller">Thriller</option>
+                                    <option value="historical">Historical</option>
+                                    <option value="comedy">Comedy</option>
+                                    <option value="contemporary">Contemporary</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg" id="generateBtn">
+                            <i class="fas fa-magic"></i> Generate Story
+                        </button>
+                    </div>
+                </form>
+                
+                <div id="loadingIndicator" class="mt-4 d-none text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">✨ Creating your story... This may take a minute or two.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function handleFileUpload(input) {
+    const file = input.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            document.getElementById('prompt').value = event.target.result;
+        };
+        reader.readAsText(file);
+    }
+}
+
+document.getElementById('storyForm').addEventListener('submit', function(e) {
+    const generateBtn = document.getElementById('generateBtn');
+    generateBtn.disabled = true;
+    generateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+    document.getElementById('loadingIndicator').classList.remove('d-none');
+    
+    // Scroll to loading indicator
+    document.getElementById('loadingIndicator').scrollIntoView({ behavior: 'smooth' });
+});
+</script>
+{% endblock %} 
